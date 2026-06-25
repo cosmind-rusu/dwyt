@@ -63,7 +63,6 @@ def download_mp3(url: str) -> Path | None:
         "-x",                     # extract audio
         "--audio-format", "mp3",  # convert to mp3
         "--audio-quality", "0",   # best quality
-        "--embed-thumbnail",      # embed cover art
         "--add-metadata",         # add metadata tags
         "--output", outtmpl,
         "--no-playlist",          # single video only
@@ -78,12 +77,15 @@ def download_mp3(url: str) -> Path | None:
     )
 
     if result.returncode != 0:
-        print(f"yt-dlp error: {result.stderr}")
-        return None
+        err_msg = result.stderr.strip() or "Unknown error"
+        print(f"yt-dlp error (exit {result.returncode}): {err_msg}")
+        raise RuntimeError(err_msg)
 
     # After successful download, find the most recent MP3 file
     mp3s = sorted(DOWNLOAD_DIR.glob("*.mp3"), key=os.path.getmtime, reverse=True)
-    return mp3s[0] if mp3s else None
+    if not mp3s:
+        raise RuntimeError("No se generó ningún archivo MP3")
+    return mp3s[0]
 
 # ── Routes ──────────────────────────────────────────────────
 
@@ -102,9 +104,14 @@ def download():
     if "youtube.com" not in url and "youtu.be" not in url:
         return jsonify({"error": "URL no válida. Debe ser de YouTube."}), 400
 
-    file_path = download_mp3(url)
-    if not file_path or not file_path.exists():
-        return jsonify({"error": "No se pudo descargar el audio. Revisa la URL."}), 500
+    try:
+        file_path = download_mp3(url)
+    except RuntimeError as e:
+        return jsonify({"error": f"Error al descargar: {str(e)}"}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "La descarga tomó demasiado tiempo (>5 min)"}), 500
+    except Exception as e:
+        return jsonify({"error": f"Error inesperado: {str(e)}"}), 500
 
     try:
         return send_file(
@@ -127,6 +134,48 @@ def history():
         mtime = time.strftime("%Y-%m-%d %H:%M", time.localtime(f.stat().st_mtime))
         items.append({"name": f.name, "size": size_mb, "date": mtime})
     return jsonify(items)
+
+
+@app.route("/health")
+def health():
+    """Diagnostic endpoint — checks that dependencies are available."""
+    import shutil
+
+    checks = {}
+
+    # yt-dlp
+    yt_path = shutil.which("yt-dlp")
+    checks["yt-dlp"] = yt_path if yt_path else "NOT FOUND"
+    if yt_path:
+        try:
+            ver = subprocess.run(
+                [yt_path, "--version"], capture_output=True, text=True, timeout=10
+            )
+            checks["yt-dlp_version"] = ver.stdout.strip() if ver.returncode == 0 else ver.stderr.strip()
+        except Exception as e:
+            checks["yt-dlp_error"] = str(e)
+
+    # ffmpeg
+    ff_path = shutil.which("ffmpeg")
+    checks["ffmpeg"] = ff_path if ff_path else "NOT FOUND"
+    if ff_path:
+        try:
+            ver = subprocess.run(
+                [ff_path, "-version"], capture_output=True, text=True, timeout=10
+            )
+            checks["ffmpeg_version"] = ver.stdout.split("\n")[0] if ver.returncode == 0 else ver.stderr.strip()
+        except Exception as e:
+            checks["ffmpeg_error"] = str(e)
+
+    # disk space
+    statvfs = os.statvfs(str(DOWNLOAD_DIR))
+    free_mb = (statvfs.f_frsize * statvfs.f_bavail) / (1024 * 1024)
+    checks["disk_free_mb"] = round(free_mb, 1)
+
+    checks["download_dir"] = str(DOWNLOAD_DIR)
+    checks["download_dir_writable"] = os.access(str(DOWNLOAD_DIR), os.W_OK)
+
+    return jsonify(checks)
 
 
 if __name__ == "__main__":
