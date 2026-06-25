@@ -74,6 +74,8 @@ def download_mp3(url: str) -> Path:
         "--add-metadata",         # add metadata tags
         "--output", outtmpl,
         "--no-playlist",          # single video only
+        "--js-runtimes", "deno",  # usar deno como JS runtime
+        "--remote-components", "ejs:github",  # descargar solver de challenges
         "--extractor-retries", "5",
         "--retries", "10",
     ]
