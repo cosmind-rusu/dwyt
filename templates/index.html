@@ -318,16 +318,25 @@
                     <button class="btn btn-primary btn-sm" onclick="saveCookies()">Guardar cookies</button>
                     <span id="cookies-save-status" style="font-size:0.85rem;align-self:center;color:var(--text-dim);"></span>
                 </div>
+                <div id="cookies-diagnostics"></div>
                 <div class="cookies-help">
-                    <strong>¿Cómo obtener las cookies?</strong>
+                    <strong>🍪 Cómo obtener cookies de YouTube válidas</strong>
                     <ol>
-                        <li>Instala una extensión como <a href="https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank">Get cookies.txt LOCALLY</a> (Chrome)</li>
-                        <li>Ve a <strong>youtube.com</strong> y asegúrate de haber iniciado sesión</li>
-                        <li>Haz clic en la extensión → "Export" → guarda el archivo</li>
-                        <li>Abre el archivo <code>cookies.txt</code>, copia TODO el contenido y pégalo arriba</li>
-                        <li>Haz clic en "Guardar cookies"</li>
+                        <li>Ve a <strong>youtube.com</strong> en Chrome/Edge y <strong>inicia sesión</strong> con tu cuenta de Google</li>
+                        <li>Instala la extensión <a href="https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank">Get cookies.txt LOCALLY</a></li>
+                        <li>Haz clic en el icono de la extensión → se abre un popup</li>
+                        <li>Marca la opción <strong>"Export as Netscape format"</strong> (importante)</li>
+                        <li>Haz clic en <strong>"Export"</strong> → guarda el archivo</li>
+                        <li>Abre el archivo <code>cookies.txt</code> con bloc de notas, <strong>copia TODO el contenido</strong> y pégalo arriba</li>
+                        <li>Haz clic en "Guardar cookies" — verás el diagnóstico abajo</li>
                     </ol>
-                    <p style="margin-top:0.3rem;"><strong>Alternativa:</strong> Configura la variable de entorno <code>YOUTUBE_COOKIES</code> en Railway con el contenido del archivo en base64.</p>
+                    <p style="margin-top:0.5rem;">
+                        <strong>✅ Debes ver:</strong> SAPISID, __Secure-3PSAPISID, SID o LOGIN_INFO en la lista de cookies de YouTube.<br>
+                        <strong>❌ Si solo ves</strong> PREF, YSC, VISITOR_INFO1_LIVE — <em>no has iniciado sesión</em>, esas no sirven.
+                    </p>
+                    <p style="margin-top:0.3rem;">
+                        <strong>Alternativa persistente:</strong> Convierte el archivo a base64 y configúralo como variable de entorno <code>YOUTUBE_COOKIES</code> en Railway.
+                    </p>
                 </div>
             </details>
         </div>
@@ -376,9 +385,23 @@ async function checkCookies() {
     try {
         const resp = await fetch('/cookies');
         const data = await resp.json();
-        if (data.configured) {
+        if (data.exists && data.count > 0) {
+            let auth = data.has_auth_cookies ? '✅' : '⚠️ sin auth';
             cookiesBadge.className = 'cookies-badge ok';
-            cookiesBadge.innerHTML = '🍪 Cookies configuradas ✅';
+            cookiesBadge.innerHTML = `🍪 ${data.count} cookies · ${auth}`;
+            // Show diagnostics
+            const diag = document.getElementById('cookies-diagnostics');
+            if (diag) {
+                diag.innerHTML = `
+                    <div style="margin-top:0.5rem;padding:0.5rem;background:var(--surface2);border-radius:6px;font-size:0.82rem;line-height:1.6;">
+                        <div><strong>Cookies:</strong> ${data.count}</div>
+                        <div><strong>Dominios:</strong> ${data.domains.join(', ')}</div>
+                        ${data.youtube_cookies && data.youtube_cookies.length ? `<div><strong>YouTube:</strong> ${data.youtube_cookies.join(', ')}</div>` : ''}
+                        <div><strong>Auth:</strong> ${data.has_auth_cookies ? '✅ Sí' : '❌ No — faltan cookies de autenticación'}</div>
+                        <div><strong>Tamaño:</strong> ${data.size_bytes} bytes</div>
+                    </div>
+                `;
+            }
         } else {
             cookiesBadge.className = 'cookies-badge missing';
             cookiesBadge.innerHTML = '🍪 Sin cookies — YouTube puede bloquear la descarga';
@@ -396,7 +419,7 @@ async function saveCookies() {
         const resp = await fetch('/cookies', { method: 'POST', body: val });
         const data = await resp.json();
         if (data.ok) {
-            document.getElementById('cookies-save-status').textContent = '✅ Guardadas (' + data.size_bytes + ' bytes)';
+            document.getElementById('cookies-save-status').textContent = `✅ ${data.count} cookies guardadas (${data.size_bytes} bytes)`;
             checkCookies();
         } else {
             document.getElementById('cookies-save-status').textContent = '❌ ' + (data.error || 'Error');
