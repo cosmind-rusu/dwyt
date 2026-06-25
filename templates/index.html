@@ -12,6 +12,7 @@
             --border: #333336;
             --accent: #e84040;
             --accent-hover: #ff5555;
+            --green: #22c55e;
             --text: #e8e8ea;
             --text-dim: #88889a;
             --radius: 12px;
@@ -33,7 +34,7 @@
         }
         header {
             text-align: center;
-            margin-bottom: 2.5rem;
+            margin-bottom: 2rem;
         }
         header h1 {
             font-size: 2.5rem;
@@ -46,8 +47,28 @@
             margin-top: 0.4rem;
             font-size: 0.95rem;
         }
+        .cookies-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.78rem;
+            font-weight: 500;
+            margin-top: 0.5rem;
+        }
+        .cookies-badge.ok {
+            background: rgba(34, 197, 94, 0.12);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, 0.25);
+        }
+        .cookies-badge.missing {
+            background: rgba(239, 68, 68, 0.12);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.25);
+            cursor: pointer;
+        }
 
-        /* ── Form ── */
         .card {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -95,8 +116,20 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+        .btn-sm {
+            padding: 0.4rem 1rem;
+            font-size: 0.85rem;
+        }
+        .btn-outline {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-outline:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
 
-        /* ── Status / Progress ── */
         #status {
             margin-top: 1rem;
             padding: 0.75rem 1rem;
@@ -140,6 +173,58 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        /* ── Cookies section ── */
+        .cookies-section {
+            margin-top: 1rem;
+        }
+        .cookies-section summary {
+            cursor: pointer;
+            color: var(--text-dim);
+            font-size: 0.88rem;
+            padding: 0.3rem 0;
+            user-select: none;
+        }
+        .cookies-section summary:hover {
+            color: var(--text);
+        }
+        .cookies-section textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 0.75rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--surface2);
+            color: var(--text);
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            resize: vertical;
+            margin: 0.5rem 0;
+            outline: none;
+        }
+        .cookies-section textarea:focus {
+            border-color: var(--accent);
+        }
+        .cookies-help {
+            margin-top: 0.5rem;
+            padding: 0.75rem;
+            background: rgba(59, 130, 246, 0.08);
+            border-radius: 8px;
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
+        .cookies-help ol {
+            margin-left: 1.2rem;
+            margin-top: 0.3rem;
+        }
+        .cookies-help a {
+            color: #60a5fa;
+            text-decoration: none;
+        }
+        .cookies-help a:hover {
+            text-decoration: underline;
+        }
+
         /* ── History ── */
         #history {
             margin-top: 0.5rem;
@@ -173,21 +258,6 @@
             font-size: 0.78rem;
             white-space: nowrap;
         }
-        .history-item .btn-small {
-            padding: 0.3rem 0.7rem;
-            font-size: 0.78rem;
-            border-radius: 6px;
-            border: 1px solid var(--border);
-            background: transparent;
-            color: var(--text);
-            cursor: pointer;
-            transition: 0.2s;
-        }
-        .history-item .btn-small:hover {
-            background: var(--accent);
-            border-color: var(--accent);
-            color: white;
-        }
         .empty-history {
             color: var(--text-dim);
             font-size: 0.9rem;
@@ -214,6 +284,9 @@
     <header>
         <h1><span>dw</span>yt</h1>
         <p>Pega un enlace de YouTube y descarga el audio en MP3</p>
+        <div id="cookies-badge" class="cookies-badge missing" onclick="toggleCookies()">
+            🍪 Sin cookies — YouTube puede bloquear la descarga
+        </div>
     </header>
 
     <div class="card">
@@ -232,6 +305,32 @@
         </form>
 
         <div id="status"></div>
+
+        <!-- Cookies section -->
+        <div class="cookies-section">
+            <details id="cookies-details">
+                <summary>🍪 Configurar cookies de YouTube</summary>
+                <p style="margin:0.5rem 0 0.2rem;font-size:0.85rem;color:var(--text-dim);">
+                    Pega aquí el contenido de tu archivo <code>cookies.txt</code> de YouTube:
+                </p>
+                <textarea id="cookies-input" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com	TRUE	/	TRUE	1729638912	SAPISID	..."></textarea>
+                <div style="display:flex;gap:0.5rem;">
+                    <button class="btn btn-primary btn-sm" onclick="saveCookies()">Guardar cookies</button>
+                    <span id="cookies-save-status" style="font-size:0.85rem;align-self:center;color:var(--text-dim);"></span>
+                </div>
+                <div class="cookies-help">
+                    <strong>¿Cómo obtener las cookies?</strong>
+                    <ol>
+                        <li>Instala una extensión como <a href="https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank">Get cookies.txt LOCALLY</a> (Chrome)</li>
+                        <li>Ve a <strong>youtube.com</strong> y asegúrate de haber iniciado sesión</li>
+                        <li>Haz clic en la extensión → "Export" → guarda el archivo</li>
+                        <li>Abre el archivo <code>cookies.txt</code>, copia TODO el contenido y pégalo arriba</li>
+                        <li>Haz clic en "Guardar cookies"</li>
+                    </ol>
+                    <p style="margin-top:0.3rem;"><strong>Alternativa:</strong> Configura la variable de entorno <code>YOUTUBE_COOKIES</code> en Railway con el contenido del archivo en base64.</p>
+                </div>
+            </details>
+        </div>
     </div>
 
     <div id="history">
@@ -252,6 +351,7 @@ const urlInput = document.getElementById('url-input');
 const submitBtn = document.getElementById('submit-btn');
 const statusDiv = document.getElementById('status');
 const historyList = document.getElementById('history-list');
+const cookiesBadge = document.getElementById('cookies-badge');
 
 // ── Status helpers ──
 function setStatus(msg, type) {
@@ -267,9 +367,43 @@ function setStatus(msg, type) {
     }
 }
 
-function clearStatus() {
-    statusDiv.className = '';
-    statusDiv.style.display = 'none';
+// ── Cookies ──
+function toggleCookies() {
+    document.getElementById('cookies-details').open = true;
+}
+
+async function checkCookies() {
+    try {
+        const resp = await fetch('/cookies');
+        const data = await resp.json();
+        if (data.configured) {
+            cookiesBadge.className = 'cookies-badge ok';
+            cookiesBadge.innerHTML = '🍪 Cookies configuradas ✅';
+        } else {
+            cookiesBadge.className = 'cookies-badge missing';
+            cookiesBadge.innerHTML = '🍪 Sin cookies — YouTube puede bloquear la descarga';
+        }
+    } catch {}
+}
+
+async function saveCookies() {
+    const val = document.getElementById('cookies-input').value.trim();
+    if (!val || val.length < 10) {
+        document.getElementById('cookies-save-status').textContent = '⚠️ Pega el contenido del archivo cookies.txt primero';
+        return;
+    }
+    try {
+        const resp = await fetch('/cookies', { method: 'POST', body: val });
+        const data = await resp.json();
+        if (data.ok) {
+            document.getElementById('cookies-save-status').textContent = '✅ Guardadas (' + data.size_bytes + ' bytes)';
+            checkCookies();
+        } else {
+            document.getElementById('cookies-save-status').textContent = '❌ ' + (data.error || 'Error');
+        }
+    } catch (err) {
+        document.getElementById('cookies-save-status').textContent = '❌ Error de conexión';
+    }
 }
 
 // ── Submit ──
@@ -282,7 +416,6 @@ form.addEventListener('submit', async (e) => {
     setStatus('Descargando y convirtiendo a MP3…', 'progress');
 
     try {
-        // Use XMLHttpRequest to detect download
         const resp = await fetch('/download', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -291,12 +424,22 @@ form.addEventListener('submit', async (e) => {
 
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ error: 'Error del servidor' }));
-            setStatus(err.error || 'Error desconocido', 'error');
+            const errorMsg = err.error || 'Error desconocido';
+            setStatus(errorMsg, 'error');
+            // Suggest cookies if the error mentions auth/bot/429
+            if (errorMsg.toLowerCase().includes('bot') || errorMsg.includes('429') || errorMsg.includes('sign in')) {
+                setTimeout(() => {
+                    const hint = document.createElement('div');
+                    hint.style.marginTop = '0.5rem';
+                    hint.style.fontSize = '0.85rem';
+                    hint.innerHTML = '💡 <a href="#" onclick="toggleCookies();return false;" style="color:#60a5fa;">Configura cookies de YouTube</a> para evitar este bloqueo.';
+                    statusDiv.appendChild(hint);
+                }, 100);
+            }
             submitBtn.disabled = false;
             return;
         }
 
-        // It's a file download — get blob and trigger download
         const blob = await resp.blob();
         const contentDisp = resp.headers.get('Content-Disposition') || '';
         const filename = contentDisp.includes('filename=')
@@ -348,8 +491,9 @@ function escapeHtml(text) {
     return d.innerHTML;
 }
 
-// Load history on page load
+// Init
 loadHistory();
+checkCookies();
 </script>
 </body>
 </html>

@@ -3,6 +3,7 @@
 dwyt — Download YouTube to MP3 web app.
 """
 
+import base64
 import os
 import re
 import shutil
@@ -19,41 +20,48 @@ BASE_DIR = Path(__file__).parent
 DOWNLOAD_DIR = BASE_DIR / "downloads"
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
-# Find yt-dlp — must be accessible via subprocess
+# Cookies file for YouTube authentication
+COOKIES_FILE = BASE_DIR / "cookies.txt"
+
+# Find yt-dlp
 YT_DLP = shutil.which("yt-dlp") or str(Path(sys.executable).parent / "yt-dlp")
 if not Path(YT_DLP).exists():
-    YT_DLP = f"{sys.executable} -m yt_dlp"  # fallback: run as module
+    YT_DLP = f"{sys.executable} -m yt_dlp"
 
-MAX_FILE_AGE = 3600  # 1 hour — clean files older than this
+# ── Load cookies from env var on startup ────────────────────
+_cookie_env = os.environ.get("YOUTUBE_COOKIES", "").strip()
+if _cookie_env:
+    try:
+        decoded = base64.b64decode(_cookie_env).decode("utf-8")
+        COOKIES_FILE.write_text(decoded)
+        print(f"🍪 Cookies cargadas desde YOUTUBE_COOKIES ({len(decoded)} bytes)")
+    except Exception as e:
+        print(f"⚠️  Error al decodificar YOUTUBE_COOKIES: {e}")
 
 # ── Periodic cleanup ──────────────────────────────────────────
+
+MAX_FILE_AGE = 3600
 
 def cleanup_old_files():
     """Remove downloaded files older than MAX_FILE_AGE seconds."""
     while True:
         now = time.time()
         for f in DOWNLOAD_DIR.iterdir():
-            if f.is_file() and (now - f.stat().st_mtime) > MAX_FILE_AGE:
+            if f.is_file() and f.name != "cookies.txt" and (now - f.stat().st_mtime) > MAX_FILE_AGE:
                 f.unlink(missing_ok=True)
-        time.sleep(300)  # every 5 minutes
+        time.sleep(300)
 
 threading.Thread(target=cleanup_old_files, daemon=True).start()
 
 # ── Helpers ──────────────────────────────────────────────────
 
-def sanitize_filename(name: str) -> str:
-    """Remove or replace characters that are problematic in filenames."""
-    return re.sub(r'[<>:"/\\|?*]', '', name).strip()
-
-def download_mp3(url: str) -> Path | None:
+def download_mp3(url: str) -> Path:
     """
     Download audio from a YouTube URL as MP3 (best quality).
-    Returns the path to the downloaded file, or None on failure.
+    Uses cookies file if available.
     """
-    # yt-dlp output template — sanitize to avoid shell issues
     outtmpl = str(DOWNLOAD_DIR / '%(title)s.%(ext)s')
 
-    # Build the command — YT_DLP may be a path or a "python -m yt_dlp" string
     if " " in YT_DLP:
         base_cmd = YT_DLP.split()
     else:
@@ -66,14 +74,21 @@ def download_mp3(url: str) -> Path | None:
         "--add-metadata",         # add metadata tags
         "--output", outtmpl,
         "--no-playlist",          # single video only
-        url,
+        "--extractor-retries", "5",
+        "--retries", "10",
     ]
+
+    # Add cookies if available
+    if COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 0:
+        cmd += ["--cookies", str(COOKIES_FILE)]
+
+    cmd.append(url)
 
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
-        timeout=300,  # 5 min max per download
+        timeout=300,
     )
 
     if result.returncode != 0:
@@ -81,7 +96,6 @@ def download_mp3(url: str) -> Path | None:
         print(f"yt-dlp error (exit {result.returncode}): {err_msg}")
         raise RuntimeError(err_msg)
 
-    # After successful download, find the most recent MP3 file
     mp3s = sorted(DOWNLOAD_DIR.glob("*.mp3"), key=os.path.getmtime, reverse=True)
     if not mp3s:
         raise RuntimeError("No se generó ningún archivo MP3")
@@ -91,7 +105,8 @@ def download_mp3(url: str) -> Path | None:
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    has_cookies = COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 0
+    return render_template("index.html", has_cookies=has_cookies)
 
 
 @app.route("/download", methods=["POST"])
@@ -100,7 +115,6 @@ def download():
     if not url:
         return jsonify({"error": "Introduce una URL de YouTube"}), 400
 
-    # Basic validation
     if "youtube.com" not in url and "youtu.be" not in url:
         return jsonify({"error": "URL no válida. Debe ser de YouTube."}), 400
 
@@ -124,6 +138,27 @@ def download():
         return jsonify({"error": f"Error al enviar el archivo: {str(e)}"}), 500
 
 
+@app.route("/cookies", methods=["GET", "POST"])
+def cookies():
+    """GET: check status. POST: upload cookies.txt content."""
+    if request.method == "GET":
+        exists = COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 0
+        size = COOKIES_FILE.stat().st_size if exists else 0
+        return jsonify({
+            "configured": exists,
+            "size_bytes": size,
+        })
+
+    # POST: save cookies
+    data = request.get_data(as_text=True)
+    if not data or len(data.strip()) < 10:
+        return jsonify({"error": "Contenido de cookies demasiado corto"}), 400
+
+    COOKIES_FILE.write_text(data.strip())
+    print(f"🍪 Cookies guardadas ({len(data.strip())} bytes)")
+    return jsonify({"ok": True, "size_bytes": len(data.strip())})
+
+
 @app.route("/history")
 def history():
     """Return list of recently downloaded files."""
@@ -139,8 +174,6 @@ def history():
 @app.route("/health")
 def health():
     """Diagnostic endpoint — checks that dependencies are available."""
-    import shutil
-
     checks = {}
 
     # yt-dlp
@@ -167,10 +200,28 @@ def health():
         except Exception as e:
             checks["ffmpeg_error"] = str(e)
 
+    # deno
+    deno_path = shutil.which("deno")
+    checks["deno"] = deno_path if deno_path else "NOT FOUND"
+    if deno_path:
+        try:
+            ver = subprocess.run(
+                [deno_path, "--version"], capture_output=True, text=True, timeout=10
+            )
+            checks["deno_version"] = ver.stdout.split("\n")[0] if ver.returncode == 0 else ver.stderr.strip()
+        except Exception as e:
+            checks["deno_error"] = str(e)
+
+    # cookies
+    checks["cookies_configured"] = COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 0
+
     # disk space
-    statvfs = os.statvfs(str(DOWNLOAD_DIR))
-    free_mb = (statvfs.f_frsize * statvfs.f_bavail) / (1024 * 1024)
-    checks["disk_free_mb"] = round(free_mb, 1)
+    try:
+        statvfs = os.statvfs(str(DOWNLOAD_DIR))
+        free_mb = (statvfs.f_frsize * statvfs.f_bavail) / (1024 * 1024)
+        checks["disk_free_mb"] = round(free_mb, 1)
+    except Exception:
+        checks["disk_free_mb"] = "unknown"
 
     checks["download_dir"] = str(DOWNLOAD_DIR)
     checks["download_dir_writable"] = os.access(str(DOWNLOAD_DIR), os.W_OK)
@@ -182,4 +233,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 dwyt corriendo en http://0.0.0.0:{port}")
     print(f"   Descargas → {DOWNLOAD_DIR}")
+    print(f"   Cookies → {'✅ configuradas' if (COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 0) else '❌ no configuradas'}")
     app.run(host="0.0.0.0", port=port, debug=False)

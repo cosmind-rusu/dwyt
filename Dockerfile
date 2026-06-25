@@ -1,8 +1,12 @@
 FROM python:3.11-slim
 
-# Instalar ffmpeg (necesario para yt-dlp convertir a MP3)
-RUN apt-get update && apt-get install -y ffmpeg && \
+# Instalar ffmpeg (conversión a MP3) + deno (JS runtime para yt-dlp)
+RUN apt-get update && apt-get install -y ffmpeg curl unzip && \
     rm -rf /var/lib/apt/lists/*
+
+# Instalar deno (JS runtime necesario para extraer YouTube)
+RUN curl -fsSL https://deno.land/install.sh | sh -s -- -y
+ENV PATH="/root/.deno/bin:${PATH}"
 
 WORKDIR /app
 
